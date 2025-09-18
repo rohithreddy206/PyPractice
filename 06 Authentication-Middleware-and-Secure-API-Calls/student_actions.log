@@ -1,0 +1,21 @@
+2025-09-15 17:26:59,810 | INFO | Student added: {'first_name': 'Rohith reddy', 'last_name': 'kot', 'phone': '8513851351', 'birthdate': datetime.date(2016, 2, 2), 'email': 'Rohith@gmail.com'}
+2025-09-15 17:37:56,258 | INFO | Student updated: {'first_name': 'rohit', 'last_name': 'vffdfd', 'phone': '8131431384', 'birthdate': datetime.date(2014, 6, 15), 'email': 'roith@gmail.com'}
+2025-09-15 17:41:26,558 | INFO | Student added: {'first_name': 'rohit', 'last_name': 'efcdc', 'phone': '8438516853', 'birthdate': datetime.date(2012, 2, 15), 'email': 'johnn@gmail.com'}
+2025-09-15 17:41:37,026 | INFO | Student updated: {'first_name': 'Rohith reddy', 'last_name': 'kottala', 'phone': '8513851351', 'birthdate': datetime.date(2016, 2, 2), 'email': 'Rohith@gmail.com'}
+2025-09-15 17:41:50,550 | INFO | Student updated: {'first_name': 'rohit', 'last_name': 'efcdc', 'phone': '8438516853', 'birthdate': datetime.date(2012, 2, 15), 'email': 'john@gmail.com'}
+2025-09-15 17:42:20,995 | INFO | Student updated: {'first_name': 'Rohith reddy', 'last_name': 'kottala', 'phone': '8513851358', 'birthdate': datetime.date(2016, 2, 2), 'email': 'Rohith@gmail.com'}
+2025-09-15 17:50:27,902 | INFO | Student added: {'first_name': 'ddv', 'last_name': 'dffvfv', 'phone': '8568533853', 'birthdate': datetime.date(2013, 6, 11), 'email': 'ddsmvkm@gmail.com'}
+2025-09-15 17:50:34,385 | INFO | Student updated: {'first_name': 'ddv', 'last_name': 'dffvfv', 'phone': '8568533853', 'birthdate': datetime.date(2013, 6, 11), 'email': 'ddsvkm@gmail.com'}
+2025-09-15 18:14:28,419 | INFO | Student updated: {'first_name': 'Rohith reddy', 'last_name': 'kottala', 'phone': '8513851358', 'birthdate': datetime.date(2016, 2, 2), 'email': 'rohith123@gmail.com'}
+2025-09-15 18:15:06,979 | INFO | Student added: {'first_name': 'rakesh', 'last_name': 'nagamalla', 'phone': '6851855288', 'birthdate': datetime.date(2018, 2, 15), 'email': 'hfdhhr@gmail.com'}
+2025-09-16 11:05:25,422 | INFO | Student updated: {'first_name': 'Rohith reddy', 'last_name': 'kottala', 'phone': '8513851358', 'birthdate': datetime.date(2016, 2, 2), 'email': 'rohith13@gmail.com'}
+2025-09-16 15:15:38,471 | INFO | Student updated: {'first_name': 'Rohith reddy', 'last_name': 'kottala', 'phone': '8513851358', 'birthdate': datetime.date(2016, 2, 2), 'email': 'rohith@gmail.com'}
+2025-09-16 15:41:35,089 | INFO | Student added: {'first_name': 'dsd', 'last_name': 'vdsdv', 'phone': '8513232512', 'birthdate': datetime.date(2014, 2, 16), 'email': 'vvdfjhb@gmail.com'}
+2025-09-16 15:41:44,030 | INFO | Student updated: {'first_name': 'Rohith reddy', 'last_name': 'kottala', 'phone': '8513851357', 'birthdate': datetime.date(2016, 2, 2), 'email': 'rohith@gmail.com'}
+2025-09-16 17:07:17,960 | INFO | Student added: {'first_name': 'roith reddy', 'last_name': 'vssv', 'phone': '8512351126', 'birthdate': datetime.date(2001, 5, 2), 'email': 'dsdsdvdv@gmail.com'}
+2025-09-17 17:22:58,979 | INFO | Student added: {'first_name': 'rohith', 'last_name': 'reddy', 'phone': '8466951551', 'birthdate': datetime.date(2005, 2, 20), 'email': 'rohith@gmail.com'}
+2025-09-17 17:25:22,564 | INFO | Student updated: {'first_name': 'rakesh', 'last_name': 'nagamalla', 'phone': '8513232512', 'birthdate': datetime.date(2014, 2, 16), 'email': 'rakesh@gmail.com'}
+2025-09-17 17:26:02,385 | INFO | Student updated: {'first_name': 'ravi', 'last_name': 'reddy', 'phone': '8512351126', 'birthdate': datetime.date(2001, 5, 2), 'email': 'ravi@gmail.com'}
+2025-09-17 17:52:51,192 | INFO | Student added: {'first_name': 'saketh', 'last_name': 'kuddala', 'phone': '8686795952', 'birthdate': datetime.date(2008, 2, 2), 'email': 'saketh@gmail.com'}
+2025-09-17 17:56:01,179 | INFO | Student updated: {'first_name': 'sai', 'last_name': 'reddy', 'phone': '8512351126', 'birthdate': datetime.date(2001, 5, 2), 'email': 'ravi@gmail.com'}
+2025-09-17 17:56:15,637 | INFO | Student updated: {'first_name': 'rakesh', 'last_name': 'nagamalla', 'phone': '8513232512', 'birthdate': datetime.date(2003, 2, 16), 'email': 'rakesh@gmail.com'}

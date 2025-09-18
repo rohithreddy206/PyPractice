@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Registration</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; }
+    h2 { text-align: center; }
+    form, table { margin: 20px auto; }
+    form { max-width: 400px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
+    button { margin: 5px; padding: 6px 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    table { border-collapse: collapse; width: 90%; background: #fff; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #007bff; color: white; text-align: center; }
+    .cell-id { text-align: center; }
+    .cell-first, .cell-last, .cell-email { text-align: left; }
+    .message { margin-top: 15px; padding: 10px; text-align: center; border-radius: 5px; }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    .error-text { color: #d9534f; font-size: 0.9em; margin-top: 4px; }
+    .msg-yellow { background: #fff3cd !important; color: #856404 !important; }
+    .msg-red { background: #f8d7da !important; color: #721c24 !important; }
+    .btn-details { background:#17a2b8; }
+    .btn-details:hover { background:#117488; }
+    .btn-subjects { background:#198754; }
+    .btn-subjects:hover { background:#12623d; }
+  </style>
+</head>
+<body>
+  <h2>{{ heading }}</h2>
+  <form id="studentForm">
+    <label for="first_name">First Name:</label>
+    <input id="first_name" name="first_name" required pattern="[A-Za-z\s-]{2,50}" title="2-50 letters, spaces or hyphens" autocomplete="off" inputmode="text">
+    <div class="error-text" id="first_name_error" aria-live="polite"></div>
+
+    <label for="last_name">Last Name:</label>
+    <input id="last_name" name="last_name" required pattern="[A-Za-z\s-]{2,50}" title="2-50 letters, spaces or hyphens" autocomplete="off" inputmode="text">
+    <div class="error-text" id="last_name_error" aria-live="polite"></div>
+
+    <label for="phone">Phone Number:</label>
+    <input id="phone" name="phone" required inputmode="numeric" maxlength="10" pattern="[5-9][0-9]{9}" title="10 digits, starting with 5-9" autocomplete="off">
+    <div class="error-text" id="phone_error" aria-live="polite"></div>
+
+    <label for="birthdate">Birthdate:</label>
+    <input type="date" id="birthdate" name="birthdate" required>
+    <div class="error-text" id="birthdate_error" aria-live="polite"></div>
+
+    <label>Email:</label>
+    <input type="email" id="email" name="email" required autocomplete="off">
+    <div class="error-text" id="email_error" aria-live="polite"></div>
+
+    <button type="submit" id="submitBtn">Register</button>
+    <button type="button" id="cancelEditBtn" style="display:none; margin-left:8px;">Cancel Edit</button>
+  </form>
+
+  <div id="response" class="message" style="display:none;"></div>
+
+  <h2>All Students</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Student ID</th>
+        <th>First Name</th>
+        <th>Last Name</th>
+        <th>Phone Number</th>
+        <th>Date Of Birth</th>
+        <th>Email</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="studentTableBody"></tbody>
+  </table>
+
+  <!-- Confirmation modal -->
+  <div id="confirmModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:16px; border-radius:6px; max-width:90%; margin:100px auto; width:320px; text-align:center;">
+      <p id="confirmText">Are you sure?</p>
+      <div style="margin-top:12px; display:flex; gap:8px; justify-content:center;">
+        <button id="confirmYes" style="background:#d9534f;">Delete</button>
+        <button id="confirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Redirect to login if not authenticated
+    if (!(localStorage.getItem('SECURITY_TOKEN') || localStorage.getItem('security_token'))) {
+      window.location.href = '/login';
+    }
+
+    function getToken() {
+      return localStorage.getItem('SECURITY_TOKEN') || localStorage.getItem('security_token');
+    }
+
+    // Helper for authenticated API requests
+    function authFetch(url, options={}) {
+      options.headers = options.headers || {};
+      options.headers['Authorization'] = 'Bearer ' + getToken();
+      return fetch(url, options);
+    }
+
+    // Example usage:
+    // authFetch('/api/students').then(res => res.json()).then(data => { /* handle data */ });
+
+    // Logout button
+    function logout() {
+      localStorage.removeItem('security_token');
+      window.location.href = '/login';
+    }
+
+    function showAuthError() {
+      const box = document.getElementById("response");
+      box.style.display = "block";
+      box.textContent = "Authentication failed: Invalid or missing token.";
+      box.className = "message error";
+    }
+
+    function showMessage(msg, colorClass) {
+      const box = document.getElementById("response");
+      box.style.display = "block";
+      box.textContent = msg;
+      box.className = "message " + colorClass;
+    }
+
+    async function loadStudents() {
+      const res = await authFetch("/api/students");
+      if (res.status === 401) return showAuthError();
+      const students = await res.json();
+      const tbody = document.getElementById("studentTableBody");
+      tbody.innerHTML = "";
+      students.forEach(s => {
+        const row = document.createElement("tr");
+        row.dataset.id = s.id;
+        row.innerHTML = `
+          <td class="cell-id">${s.id}</td>
+          <td class="cell-first">${s.first_name}</td>
+          <td class="cell-last">${s.last_name}</td>
+          <td class="cell-phone" style="text-align:center;">${s.phone}</td>
+          <td class="cell-birth" style="text-align:center;">${s.birthdate}</td>
+          <td class="cell-email">${s.email}</td>
+          <td style="text-align:center;">
+            <button class="btn-edit">Edit</button>
+            <button class="btn-delete">Delete</button>
+            <button class="btn-details" onclick="window.location='/students/${s.id}'">Details</button>
+            <button class="btn-subjects" onclick="window.location='/students/${s.id}/subjects'">Subjects</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      document.querySelectorAll('#studentTableBody .btn-edit').forEach(btn => {
+        btn.addEventListener('click', onEditClicked);
+      });
+      document.querySelectorAll('#studentTableBody .btn-delete').forEach(btn => {
+        btn.addEventListener('click', onDeleteClicked);
+      });
+    }
+
+    // Email validation: only lowercase allowed and must be a valid email format
+    document.getElementById('email').addEventListener('input', function() {
+      const emailVal = this.value;
+      const errorEl = document.getElementById('email_error');
+      const emailPattern = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+      if (/[A-Z]/.test(emailVal)) {
+        errorEl.textContent = "Only small letters are allowed in email.";
+      } else if (emailVal.length > 0 && !emailPattern.test(emailVal)) {
+        errorEl.textContent = "Please enter a valid email address (only small letters).";
+      } else {
+        errorEl.textContent = "";
+      }
+    });
+
+    // Enforce only letters, spaces, hyphens in First Name and Last Name fields
+    document.getElementById('first_name').addEventListener('input', function() {
+      this.value = this.value.replace(/[^A-Za-z\s-]/g, '');
+    });
+    document.getElementById('last_name').addEventListener('input', function() {
+      this.value = this.value.replace(/[^A-Za-z\s-]/g, '');
+    });
+
+    // Enforce only digits in Phone Number field
+    document.getElementById('phone').addEventListener('input', function() {
+      this.value = this.value.replace(/[^0-9]/g, '');
+    });
+
+    document.getElementById("studentForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+
+      ['first_name','last_name','phone','birthdate','email'].forEach(id => {
+        const el = document.getElementById(id + '_error'); if (el) el.textContent = '';
+      });
+
+      const first = document.getElementById("first_name").value.trim();
+      const last = document.getElementById("last_name").value.trim();
+      const phone = document.getElementById("phone").value.trim();
+      const birth = document.getElementById("birthdate").value;
+      const email = document.getElementById("email").value.trim();
+
+      let hasError = false;
+      const nameRe = /^[A-Za-z\s-]{2,50}$/;
+      const phoneRe = /^[5-9][0-9]{9}$/;
+      const emailPattern = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+
+      if (!nameRe.test(first)) {
+        document.getElementById('first_name_error').textContent = 'Enter 2-50 letters, spaces or hyphens';
+        hasError = true;
+      }
+      if (!nameRe.test(last)) {
+        document.getElementById('last_name_error').textContent = 'Enter 2-50 letters, spaces or hyphens';
+        hasError = true;
+      }
+      if (!phoneRe.test(phone)) {
+        document.getElementById('phone_error').textContent = 'Phone must be 10 digits and start with 5-9';
+        hasError = true;
+      }
+      if (!birth) {
+        document.getElementById('birthdate_error').textContent = 'Birthdate is required';
+        hasError = true;
+      } else {
+        const sel = new Date(birth + 'T00:00:00');
+        const today = new Date();
+        if (sel > today) {
+          document.getElementById('birthdate_error').textContent = 'Birthdate cannot be in the future';
+          hasError = true;
+        }
+      }
+      if (/[A-Z]/.test(email)) {
+        document.getElementById('email_error').textContent = "Only small letters are allowed in email.";
+        hasError = true;
+      } else if (!emailPattern.test(email)) {
+        document.getElementById('email_error').textContent = "Please enter a valid email address (only small letters).";
+        hasError = true;
+      }
+
+      if (hasError) {
+        showMessage('Please fix the highlighted fields.', 'error');
+        return;
+      }
+
+      const formData = { first_name: first, last_name: last, phone: phone, birthdate: birth, email };
+
+      let res, result;
+      if (editingId) {
+        res = await authFetch(`/api/students/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        if (res.status === 401) return showAuthError();
+        result = await res.json();
+        if (result.success) {
+          showMessage("Student updated successfully.", "msg-yellow");
+          editingId = null;
+          document.getElementById('submitBtn').textContent = 'Register';
+          document.getElementById('cancelEditBtn').style.display = 'none';
+          this.reset();
+          loadStudents();
+        } else {
+          showMessage(result.message || result.errors, "error");
+        }
+      } else {
+        res = await authFetch("/api/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData)
+        });
+        if (res.status === 401) return showAuthError();
+        result = await res.json();
+        if (result.success) {
+          showMessage("Student registered successfully.", "success");
+          this.reset();
+          loadStudents();
+        } else {
+          showMessage(result.message || result.errors, "error");
+        }
+      }
+    });
+
+    let deleteTargetId = null;
+    function onDeleteClicked(e) {
+      const row = e.target.closest('tr');
+      deleteTargetId = row.dataset.id;
+      document.getElementById('confirmText').textContent = `Delete student ${deleteTargetId}?`;
+      document.getElementById('confirmModal').style.display = 'flex';
+    }
+
+    document.getElementById('confirmNo').addEventListener('click', () => {
+      deleteTargetId = null; document.getElementById('confirmModal').style.display = 'none';
+    });
+    document.getElementById('confirmYes').addEventListener('click', async () => {
+      if (!deleteTargetId) return;
+      const res = await authFetch(`/api/students/${deleteTargetId}`, { method: 'DELETE' });
+      if (res.status === 401) return showAuthError();
+      const result = await res.json();
+      if (result.success) {
+        showMessage("Student deleted successfully.", "msg-red");
+      } else {
+        showMessage(result.message || result.errors, "error");
+      }
+      deleteTargetId = null; document.getElementById('confirmModal').style.display = 'none';
+      loadStudents();
+    });
+
+    (function(){
+      const birth = document.getElementById('birthdate');
+      const birthErr = document.getElementById('birthdate_error');
+      if (birth) {
+        const today = new Date().toISOString().split('T')[0];
+        birth.setAttribute('max', today);
+        birth.addEventListener('input', () => {
+          const v = birth.value;
+          if (!v) {
+            birthErr.textContent = '';
+            return;
+          }
+          const sel = new Date(v + 'T00:00:00');
+          const today = new Date();
+          if (sel > today) {
+            birthErr.textContent = 'Birthdate cannot be in the future';
+          } else {
+            birthErr.textContent = '';
+          }
+        });
+      }
+    })();
+
+    window.onload = loadStudents;
+
+    let editingId = null;
+
+    function onEditClicked(e) {
+      const row = e.target.closest('tr');
+      const id = row.dataset.id;
+      const first = row.querySelector('.cell-first').textContent;
+      const last = row.querySelector('.cell-last').textContent;
+      const phone = row.querySelector('.cell-phone').textContent;
+      const birth = row.querySelector('.cell-birth').textContent;
+      const email = row.querySelector('.cell-email').textContent;
+
+      document.getElementById('first_name').value = first;
+      document.getElementById('last_name').value = last;
+      document.getElementById('phone').value = phone;
+      document.getElementById('birthdate').value = birth;
+      document.getElementById('email').value = email;
+
+      editingId = id;
+      document.getElementById('submitBtn').textContent = 'Save Changes';
+      document.getElementById('cancelEditBtn').style.display = 'inline-block';
+      document.getElementById('first_name').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.getElementById('cancelEditBtn').addEventListener('click', function(){
+      editingId = null;
+      document.getElementById('studentForm').reset();
+      document.getElementById('submitBtn').textContent = 'Register';
+      this.style.display = 'none';
+    });
+  </script>
+  <button onclick="logout()" style="margin-top:10px;background:#dc3545;color:#fff;">Logout</button>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Student Subjects</title>
+<style>
+  body { font-family:Arial, sans-serif; background:#f4f6fb; margin:0; padding:28px; color:#1f2530; }
+  a { text-decoration:none; color:#0d6efd; font-weight:600; }
+  h2 { margin:6px 0 20px; font-weight:600; }
+  .card { background:#fff; border:1px solid #e2e6ef; border-radius:14px; padding:22px 24px 26px; max-width:880px; margin:0 auto 30px; box-shadow:0 4px 10px -4px rgba(0,0,0,.07); }
+  .meta { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); margin-bottom:20px; }
+  .label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:#6c7785; margin-bottom:4px; }
+  .value { font-size:14px; font-weight:500; }
+  .pill-wrap { display:flex; flex-wrap:wrap; gap:12px; }
+  .pill { padding:9px 16px 9px 18px; background:#eef2f8; border-radius:32px; font-size:13px; font-weight:500; position:relative; display:inline-flex; gap:10px; align-items:center; line-height:1; }
+  .pill:before { content:""; width:9px; height:9px; background:#0d6efd; border-radius:50%; box-shadow:0 0 0 4px rgba(13,110,253,.25); }
+  .empty { font-size:14px; color:#6c7480; padding:6px 2px; }
+  #msg { display:none; margin:0 auto 22px; max-width:880px; padding:13px 18px; border-radius:10px; font-size:14px; font-weight:500; }
+  #msg.error { background:#f8d7da; color:#842029; }
+  #msg.info { background:#e2e3e5; color:#41464b; }
+  footer { text-align:center; font-size:12px; color:#687280; margin-top:40px; }
+  button { cursor:pointer; border:none; border-radius:8px; padding:9px 18px; font-size:14px; font-weight:600; background:#0d6efd; color:#fff; transition:.18s; }
+  button:hover { background:#0b5ed7; }
+  .toolbar { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
+  @media (max-width:680px){ body{ padding:20px; } }
+</style>
+</head>
+<body>
+  <a href="/">← Back</a>
+  <h2>{{ heading }} - Student #{{ student_id }} Subjects</h2>
+
+  <div id="msg" class="info"></div>
+
+  <div class="card">
+    <div class="meta">
+      <div>
+        <div class="label">Name</div>
+        <div class="value" id="vName">—</div>
+      </div>
+      <div>
+        <div class="label">Phone</div>
+        <div class="value" id="vPhone">—</div>
+      </div>
+      <div>
+        <div class="label">Email</div>
+        <div class="value" id="vEmail">—</div>
+      </div>
+      <div>
+        <div class="label">Birthdate</div>
+        <div class="value" id="vBirth">—</div>
+      </div>
+      <div>
+        <div class="label">Subject Count</div>
+        <div class="value" id="vCount">0</div>
+      </div>
+    </div>
+
+    <h3 style="margin:0 0 14px;">Enrolled Subjects</h3>
+    <div id="subjects" class="pill-wrap"></div>
+
+    <div class="toolbar">
+      <button onclick="window.location='/students/{{ student_id }}'">Manage Subjects</button>
+    </div>
+  </div>
+
+  <footer>Subjects view • Student #{{ student_id }}</footer>
+
+<script>
+const studentId = {{ student_id }};
+const token = localStorage.getItem('SECURITY_TOKEN') || localStorage.getItem('security_token');
+if(!token){ window.location='/login'; }
+
+function authFetch(url){
+  return fetch(url, { headers:{ 'Authorization':'Bearer '+token }});
+}
+
+const msgBox = document.getElementById('msg');
+function showMsg(t, cls='info'){
+  msgBox.textContent = t;
+  msgBox.className = cls;
+  msgBox.style.display='block';
+}
+
+async function load() {
+  // Get full detail (includes enrolled subjects)
+  const detailRes = await authFetch(`/api/students/${studentId}`);
+  if(!detailRes.ok){
+    showMsg('Failed to load student','error');
+    return;
+  }
+  const detail = await detailRes.json();
+  document.getElementById('vName').textContent = detail.first_name + ' ' + detail.last_name;
+  document.getElementById('vPhone').textContent = detail.phone;
+  document.getElementById('vEmail').textContent = detail.email;
+  document.getElementById('vBirth').textContent = detail.birthdate;
+
+  // Or we could reuse detail.enrolled_subjects; still call subjects endpoint to follow requirement
+  const subjRes = await authFetch(`/api/students/${studentId}/subjects`);
+  if(!subjRes.ok){
+    showMsg('Unable to load subjects','error');
+    return;
+  }
+  const subjects = await subjRes.json();
+  const wrap = document.getElementById('subjects');
+  wrap.innerHTML = '';
+  if(subjects.length === 0){
+    wrap.innerHTML = '<div class="empty">No subjects enrolled.</div>';
+  } else {
+    subjects.forEach(s => {
+      const d = document.createElement('div');
+      d.className = 'pill';
+      d.innerHTML = `<span>${s.name}</span>`;
+      wrap.appendChild(d);
+    });
+  }
+  document.getElementById('vCount').textContent = subjects.length;
+}
+
+load();
+</script>
+</body>
+</html>
+loadSubjects();
+</script>
+</body>
+</html>

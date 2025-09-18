@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Student Details</title>
+<style>
+  :root {
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --border:#e2e6ef;
+    --primary:#0d6efd;
+    --primary-hover:#0b5ed7;
+    --danger:#dc3545;
+    --danger-hover:#b52a36;
+    --info:#17a2b8;
+    --success:#198754;
+    --warning:#ffc107;
+    --text:#1f2430;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--bg); color:var(--text); padding:28px; }
+  a.back { text-decoration:none; color:var(--primary); font-weight:600; }
+  h2 { margin:8px 0 20px; font-weight:600; }
+  .layout { display:grid; gap:22px; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px 20px 22px; position:relative; box-shadow:0 4px 10px -4px rgba(0,0,0,.06); }
+  .card h3 { margin:0 0 14px; font-size:18px; display:flex; align-items:center; gap:6px; }
+  .muted { color:#6c757d; font-size:13px; }
+  .flex-row { display:flex; flex-wrap:wrap; gap:8px; }
+  .toolbar { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
+  button { cursor:pointer; border:none; border-radius:8px; padding:8px 15px; font-size:14px; font-weight:600; letter-spacing:.3px; transition:.18s; display:inline-flex; align-items:center; gap:6px; }
+  button.primary { background:var(--primary); color:#fff; }
+  button.primary:hover { background:var(--primary-hover); }
+  button.danger { background:var(--danger); color:#fff; }
+  button.danger:hover { background:var(--danger-hover); }
+  button.outline { background:#fff; color:var(--primary); border:1px solid var(--primary); }
+  button.outline:hover { background:var(--primary); color:#fff; }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  .badge-count { background:var(--primary); color:#fff; border-radius:40px; font-size:11px; padding:2px 7px; }
+  /* Subject pills */
+  .pill { user-select:none; padding:7px 12px 7px 14px; border-radius:40px; background:#eef2f8; font-size:13px; font-weight:500; display:inline-flex; align-items:center; gap:6px; border:1px solid transparent; position:relative; line-height:1; transition:.16s; }
+  .pill.available { cursor:pointer; }
+  .pill.enrolled { cursor:pointer; background:#e8f4ff; }
+  .pill.enrolled:hover { border-color:var(--primary); }
+  .pill.available:hover { border-color:var(--success); }
+  .pill.selected { background:#ffe8b0; border-color:#ffce54; }
+  .pill .tag { font-size:10px; text-transform:uppercase; background:#d0dae6; padding:2px 5px; border-radius:3px; letter-spacing:.5px; }
+  .pill.selected .tag { background:#ffcf66; }
+  .empty { font-size:13px; color:#6c757d; padding:4px 2px; }
+  /* Toasts */
+  #toastContainer { position:fixed; top:18px; right:18px; display:flex; flex-direction:column; gap:10px; z-index:999; }
+  .toast { min-width:230px; max-width:340px; padding:12px 14px 12px 46px; border-radius:10px; font-size:14px; font-weight:500; color:#fff; position:relative; overflow:hidden; animation:slideIn .45s ease; box-shadow:0 6px 18px -6px rgba(0,0,0,.3); }
+  .toast:before { content:""; position:absolute; left:0; top:0; bottom:0; width:40px; background:rgba(0,0,0,.12); }
+  .toast.success { background:var(--success); }
+  .toast.error { background:var(--danger); }
+  .toast.info { background:var(--info); }
+  .toast.warning { background:var(--warning); color:#3b2e05; }
+  @keyframes slideIn { from { transform:translateX(40px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+  @keyframes fadeOut { to { transform:translateY(-8px); opacity:0; } }
+  .divider { height:1px; background:var(--border); margin:12px 0 14px; }
+  .grid-two { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); }
+  .label { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:#6c7785; margin-bottom:4px; }
+  .value { font-size:14px; font-weight:500; }
+  .header-line { display:flex; justify-content:space-between; align-items:center; }
+  .counter { font-size:12px; font-weight:600; color:#425066; background:#e3eaf2; padding:4px 8px; border-radius:20px; }
+  .pill-group { display:flex; flex-wrap:wrap; gap:10px; }
+  .section-actions { margin-top:8px; }
+  .status-bar { font-size:12px; color:#5c6775; margin-top:4px; }
+  @media (max-width:680px){
+    body { padding:18px; }
+    .layout { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h2>Student #{{ student_id }}</h2>
+
+  <div id="toastContainer"></div>
+
+  <div class="layout">
+    <!-- Info Card -->
+    <div class="card" id="infoCard">
+      <div class="header-line">
+        <h3>Profile</h3>
+        <span id="enrolledCount" class="counter">Subjects: 0</span>
+      </div>
+      <div class="grid-two" id="infoGrid">
+        <div>
+          <div class="label">Name</div>
+          <div class="value" id="vName">—</div>
+        </div>
+        <div>
+          <div class="label">Phone</div>
+            <div class="value" id="vPhone">—</div>
+        </div>
+        <div>
+          <div class="label">Email</div>
+          <div class="value" id="vEmail">—</div>
+        </div>
+        <div>
+          <div class="label">Birthdate</div>
+          <div class="value" id="vBirth">—</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="muted" style="line-height:1.5;">
+        Use the panels on the right to manage enrolled subjects. Click a subject pill to select it for removal or addition.
+      </div>
+    </div>
+
+    <!-- Enrolled Subjects -->
+    <div class="card" id="enrolledCard">
+      <div class="header-line">
+        <h3>Enrolled</h3>
+        <span id="selectedRemove" class="counter" style="display:none;">0 selected</span>
+      </div>
+      <div id="enrolledList" class="pill-group"></div>
+      <div class="section-actions">
+        <button id="removeBtn" class="danger" disabled>Remove Selected</button>
+      </div>
+      <div class="status-bar" id="removeHelp">Select subjects to remove.</div>
+    </div>
+
+    <!-- Available Subjects -->
+    <div class="card" id="availableCard">
+      <div class="header-line">
+        <h3>Available</h3>
+        <span id="selectedAdd" class="counter" style="display:none;">0 selected</span>
+      </div>
+      <div id="availableList" class="pill-group"></div>
+      <div class="section-actions">
+        <button id="addBtn" class="primary" disabled>Add Selected</button>
+      </div>
+      <div class="status-bar" id="addHelp">Select subjects to add.</div>
+    </div>
+  </div>
+
+<script>
+const studentId = {{ student_id }};
+const token = localStorage.getItem('SECURITY_TOKEN') || localStorage.getItem('security_token');
+if(!token){ window.location='/login'; }
+
+function authFetch(url, opt={}) {
+  opt.method = opt.method || 'GET';
+  opt.headers = opt.headers || {};
+  opt.headers['Authorization'] = 'Bearer ' + token;
+  if(opt.method === 'POST') opt.headers['Content-Type'] = 'application/json';
+  return fetch(url, opt);
+}
+
+/* Toasts */
+function toast(msg, type='info', ttl=3600) {
+  const wrap = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=> {
+    el.style.animation='fadeOut .5s forwards';
+    setTimeout(()=> el.remove(), 500);
+  }, ttl);
+}
+
+/* DOM refs */
+const vName = document.getElementById('vName');
+const vPhone = document.getElementById('vPhone');
+const vEmail = document.getElementById('vEmail');
+const vBirth = document.getElementById('vBirth');
+const enrolledList = document.getElementById('enrolledList');
+const availableList = document.getElementById('availableList');
+const removeBtn = document.getElementById('removeBtn');
+const addBtn = document.getElementById('addBtn');
+const enrolledCount = document.getElementById('enrolledCount');
+const selRemoveBadge = document.getElementById('selectedRemove');
+const selAddBadge = document.getElementById('selectedAdd');
+
+function pill(label, id, type) {
+  const d = document.createElement('div');
+  d.className = 'pill ' + type;
+  d.dataset.id = id;
+  d.innerHTML = `<span class="text">${label}</span><span class="tag">${type === 'enrolled' ? 'enrolled' : 'add'}</span>`;
+  d.addEventListener('click', () => {
+    d.classList.toggle('selected');
+    syncButtons();
+  });
+  return d;
+}
+
+function selectedIds(container) {
+  return Array.from(container.querySelectorAll('.pill.selected')).map(p => parseInt(p.dataset.id));
+}
+
+function syncButtons() {
+  const remSel = selectedIds(enrolledList).length;
+  const addSel = selectedIds(availableList).length;
+  removeBtn.disabled = remSel === 0;
+  addBtn.disabled = addSel === 0;
+  if(remSel){ selRemoveBadge.style.display='inline-block'; selRemoveBadge.textContent = remSel + ' selected'; }
+  else { selRemoveBadge.style.display='none'; }
+  if(addSel){ selAddBadge.style.display='inline-block'; selAddBadge.textContent = addSel + ' selected'; }
+  else { selAddBadge.style.display='none'; }
+}
+
+async function load() {
+  const r = await authFetch(`/api/students/${studentId}`);
+  if(!r.ok){
+    toast('Unable to load student','error');
+    return;
+  }
+  const data = await r.json();
+  vName.textContent = data.first_name + ' ' + data.last_name;
+  vPhone.textContent = data.phone;
+  vEmail.textContent = data.email;
+  vBirth.textContent = data.birthdate;
+  enrolledCount.textContent = 'Subjects: ' + data.enrolled_subjects.length;
+
+  // Enrolled
+  enrolledList.innerHTML = '';
+  if(data.enrolled_subjects.length === 0){
+    enrolledList.innerHTML = '<div class="empty">No subjects enrolled.</div>';
+  } else {
+    data.enrolled_subjects.forEach(s => enrolledList.appendChild(pill(s.name, s.id, 'enrolled')));
+  }
+
+  // Available
+  availableList.innerHTML = '';
+  if(data.available_subjects.length === 0){
+    availableList.innerHTML = '<div class="empty">No more subjects to add.</div>';
+  } else {
+    data.available_subjects.forEach(s => availableList.appendChild(pill(s.name, s.id, 'available')));
+  }
+
+  syncButtons();
+}
+
+addBtn.addEventListener('click', async () => {
+  const ids = selectedIds(availableList);
+  if(!ids.length) return;
+  addBtn.disabled = true;
+  const r = await authFetch(`/api/students/${studentId}/subjects`, {
+    method:'POST',
+    body: JSON.stringify({ subject_ids: ids })
+  });
+  if(!r.ok){
+    const d = await r.json().catch(()=>({}));
+    toast(d.detail || 'Add failed','error');
+  } else {
+    toast('Subjects added','success');
+  }
+  await load();
+});
+
+removeBtn.addEventListener('click', async () => {
+  const ids = selectedIds(enrolledList);
+  if(!ids.length) return;
+  removeBtn.disabled = true;
+  const r = await authFetch(`/api/students/${studentId}/subjects/remove`, {
+    method:'POST',
+    body: JSON.stringify({ subject_ids: ids })
+  });
+  if(!r.ok){
+    const d = await r.json().catch(()=>({}));
+    toast(d.detail || 'Remove failed','error');
+  } else {
+    toast('Subjects removed','success');
+  }
+  await load();
+});
+
+load();
+</script>
+</body>
+</html>
