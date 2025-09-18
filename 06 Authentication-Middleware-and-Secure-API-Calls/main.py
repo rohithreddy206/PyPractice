@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from dotenv import load_dotenv
 from jose import jwt, JWTError
@@ -24,6 +25,7 @@ APP_HEADING = os.getenv("APP_HEADING", "Student Registration System")
 LOGGING_ENABLED = os.getenv("LOGGING", "false").lower() == "true"
 LOG_FILE = os.getenv("LOG_FILE", "student_actions.log")
 SECURITY_TOKEN = os.getenv("SECURITY_TOKEN")
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_SECRET")
 
 # Configure logging
 if LOGGING_ENABLED:
@@ -35,7 +37,6 @@ if LOGGING_ENABLED:
 else:
     logging.disable(logging.CRITICAL)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_SECRET")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
@@ -129,6 +130,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize DB
 create_db()

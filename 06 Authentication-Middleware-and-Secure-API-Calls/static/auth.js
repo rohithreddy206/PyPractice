@@ -1,6 +1,6 @@
 // Auth logic for login, localStorage, and logout
 if (window.location.pathname === '/login') {
-  if (localStorage.getItem('SECURITY_TOKEN')) {
+  if (localStorage.getItem('jwt_token')) {
     window.location.replace('/');
   }
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -17,14 +17,17 @@ if (window.location.pathname === '/login') {
       });
       const data = await res.json();
       if (!res.ok) {
-        box.textContent = data.detail || 'Login failed';
+        box.textContent = data.error || data.detail || 'Login failed';
         box.className = 'msg error';
         box.style.display = 'block';
         return;
       }
-      localStorage.setItem('SECURITY_TOKEN', data.token);
-      localStorage.setItem('LOGGED_IN_USER', data.username || username);
-      box.textContent = 'Welcome ' + (data.username || username) + '. Redirecting...';
+      // Store JWT token and student details
+      localStorage.setItem('jwt_token', data.access_token);
+      localStorage.setItem('student_details', JSON.stringify(data.student));
+      localStorage.setItem('user_role', data.role);
+      
+      box.textContent = 'Welcome ' + data.student.first_name + ' ' + data.student.last_name + '. Redirecting...';
       box.className = 'msg success';
       box.style.display = 'block';
       setTimeout(() => window.location.replace('/'), 600);
@@ -39,13 +42,52 @@ if (window.location.pathname === '/login') {
 // Logout logic for any page
 if (document.getElementById('logoutBtn')) {
   document.getElementById('logoutBtn').addEventListener('click', function() {
-    localStorage.removeItem('SECURITY_TOKEN');
-    localStorage.removeItem('LOGGED_IN_USER');
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('student_details');
+    localStorage.removeItem('user_role');
     window.location.replace('/login');
   });
 }
 
 // Protect list page
-if (window.location.pathname === '/' && !localStorage.getItem('SECURITY_TOKEN')) {
+if (window.location.pathname === '/' && !localStorage.getItem('jwt_token')) {
   window.location.replace('/login');
+}
+
+// Utility function to get authorization headers for API calls
+function getAuthHeaders() {
+  const token = localStorage.getItem('jwt_token');
+  if (!token) {
+    window.location.replace('/login');
+    return {};
+  }
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+}
+
+// Utility function to make authenticated API calls
+async function authenticatedFetch(url, options = {}) {
+  const authHeaders = getAuthHeaders();
+  const finalOptions = {
+    ...options,
+    headers: {
+      ...authHeaders,
+      ...(options.headers || {})
+    }
+  };
+  
+  const response = await fetch(url, finalOptions);
+  
+  // If token is invalid, redirect to login
+  if (response.status === 401) {
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('student_details');
+    localStorage.removeItem('user_role');
+    window.location.replace('/login');
+    return null;
+  }
+  
+  return response;
 }

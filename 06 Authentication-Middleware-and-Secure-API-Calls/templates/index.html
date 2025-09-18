@@ -85,29 +85,18 @@
     </div>
   </div>
 
+  <script src="/static/auth.js"></script>
   <script>
-    // Redirect to login if not authenticated
-    if (!(localStorage.getItem('SECURITY_TOKEN') || localStorage.getItem('security_token'))) {
-      window.location.href = '/login';
+    // Helper for authenticated API requests using the function from auth.js
+    async function authFetch(url, options={}) {
+      return await authenticatedFetch(url, options);
     }
-
-    function getToken() {
-      return localStorage.getItem('SECURITY_TOKEN') || localStorage.getItem('security_token');
-    }
-
-    // Helper for authenticated API requests
-    function authFetch(url, options={}) {
-      options.headers = options.headers || {};
-      options.headers['Authorization'] = 'Bearer ' + getToken();
-      return fetch(url, options);
-    }
-
-    // Example usage:
-    // authFetch('/api/students').then(res => res.json()).then(data => { /* handle data */ });
 
     // Logout button
     function logout() {
-      localStorage.removeItem('security_token');
+      localStorage.removeItem('jwt_token');
+      localStorage.removeItem('student_details');
+      localStorage.removeItem('user_role');
       window.location.href = '/login';
     }
 
@@ -127,7 +116,7 @@
 
     async function loadStudents() {
       const res = await authFetch("/api/students");
-      if (res.status === 401) return showAuthError();
+      if (!res || res.status === 401) return showAuthError();
       const students = await res.json();
       const tbody = document.getElementById("studentTableBody");
       tbody.innerHTML = "";
@@ -249,7 +238,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
         });
-        if (res.status === 401) return showAuthError();
+        if (!res || res.status === 401) return showAuthError();
         result = await res.json();
         if (result.success) {
           showMessage("Student updated successfully.", "msg-yellow");
@@ -267,7 +256,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData)
         });
-        if (res.status === 401) return showAuthError();
+        if (!res || res.status === 401) return showAuthError();
         result = await res.json();
         if (result.success) {
           showMessage("Student registered successfully.", "success");
@@ -293,7 +282,7 @@
     document.getElementById('confirmYes').addEventListener('click', async () => {
       if (!deleteTargetId) return;
       const res = await authFetch(`/api/students/${deleteTargetId}`, { method: 'DELETE' });
-      if (res.status === 401) return showAuthError();
+      if (!res || res.status === 401) return showAuthError();
       const result = await res.json();
       if (result.success) {
         showMessage("Student deleted successfully.", "msg-red");
