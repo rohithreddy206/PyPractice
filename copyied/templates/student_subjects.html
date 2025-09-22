@@ -26,8 +26,17 @@
 </style>
 </head>
 <body>
-  <!-- Back now forces redirect to 127.0.0.1:8000 -->
-  <a href="http://127.0.0.1:8000/student-login" id="backLink">← Back</a>
+  <!-- Changed back link logic -->
+  <a class="back" href="/" id="backLink">← Back</a>
+  <script>
+    (function(){
+      const role = localStorage.getItem('user_role');
+      if(role && role !== 'admin'){
+        document.getElementById('backLink').setAttribute('href','/login');
+      }
+    })();
+  </script>
+  <!-- Back now to unified login -->
   <h2>{{ heading }} - Student #{{ student_id }} Subjects</h2>
 
   <div id="msg" class="info"></div>
@@ -62,7 +71,6 @@
     <div class="toolbar">
       <button onclick="window.location='/students/{{ student_id }}'">Manage Subjects</button>
       <button onclick="logout()" style="background:#6c757d;">Logout</button>
-      <button onclick="window.location='/student-login'" style="background:#198754;">Login</button>
     </div>
   </div>
 
@@ -79,13 +87,7 @@ if(!jwtToken){
 function authFetch(url){
   return fetch(url, { headers:{ 'Authorization':'Bearer '+jwtToken }});
 }
-// Added logout function
-function logout(){
-  localStorage.removeItem('jwt_token');
-  localStorage.removeItem('pending_student_id');
-  localStorage.removeItem('after_login_target');
-  window.location = 'http://127.0.0.1:8000/';
-}
+
 const msgBox = document.getElementById('msg');
 function showMsg(t, cls='info'){
   msgBox.textContent = t;
@@ -126,6 +128,13 @@ async function load() {
     });
   }
   document.getElementById('vCount').textContent = subjects.length;
+}
+
+function logout(){
+  localStorage.removeItem('jwt_token');
+  localStorage.removeItem('user_role');
+  localStorage.removeItem('student_id');
+  window.location='/login';
 }
 
 load();

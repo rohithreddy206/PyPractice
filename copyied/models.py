@@ -28,3 +28,10 @@ class StudentWithSubjects(StudentOut):
 
 class SubjectIds(BaseModel):
     subject_ids: List[int]
+
+class PaginatedStudents(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    items: List[StudentOut]

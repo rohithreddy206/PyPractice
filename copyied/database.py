@@ -17,9 +17,16 @@ def create_db():
             last_name VARCHAR(50),
             number VARCHAR(15),
             birthdate DATE,
-            email TEXT UNIQUE NOT NULL
+            email TEXT UNIQUE NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("PRAGMA table_info(students)")
+    cols = {r["name"] for r in cursor.fetchall()}
+    if "created_at" not in cols:
+        # SQLite cannot add a column with a non-constant default; add then backfill.
+        cursor.execute("ALTER TABLE students ADD COLUMN created_at TEXT")
+        cursor.execute("UPDATE students SET created_at = datetime('now') WHERE created_at IS NULL")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tblSubject(
             id INTEGER PRIMARY KEY,

@@ -27,10 +27,71 @@
     .btn-details:hover { background:#117488; }
     .btn-subjects { background:#198754; }
     .btn-subjects:hover { background:#12623d; }
+    .search-bar { max-width: 900px; margin: 10px auto 0; display:flex; gap:8px; align-items:center; }
+    .search-bar input { flex:1; padding:8px 10px; border:1px solid #bbb; border-radius:6px; font-size:14px; }
+    .search-bar select { padding:8px 10px; border:1px solid #bbb; border-radius:6px; font-size:14px; }
+    .pager { display:flex; gap:8px; align-items:center; justify-content:center; margin:12px auto; }
+    .pager button { margin:0; padding:6px 12px; }
+    .pager .info { font-size:13px; color:#444; }
+    .pager .range { font-size:13px; color:#555; }
+    .pager button:disabled {
+      background:#cfd6de !important;
+      color:#666 !important;
+      cursor:not-allowed;
+      opacity:0.75;
+    }
+    .top-actions {
+      position:fixed;
+      top:12px;
+      right:18px;
+      z-index:1000;
+    }
+    .top-actions button {
+      margin:0;
+      padding:8px 14px;
+      background:#dc3545;
+      color:#fff;
+      border:none;
+      border-radius:4px;
+      cursor:pointer;
+    }
+    .top-actions button:hover { background:#b52a36; }
   </style>
 </head>
 <body>
+  <!-- NEW: Top-right logout -->
+  <div class="top-actions">
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <!-- Student redirect script -->
+  <script>
+    (function(){
+      const role = localStorage.getItem('user_role');
+      if(role && role !== 'admin'){
+        const sid = localStorage.getItem('student_id');
+        if(sid) window.location.replace(`/students/${sid}`);
+      }
+    })();
+  </script>
+
   <h2>{{ heading }}</h2>
+
+  <!-- NEW Search -->
+  <div class="search-bar">
+    <input id="studentSearch" type="text" placeholder="Search by first name, last name or email">
+    <button id="btnSearch">Search</button>
+    <button id="btnClear" style="background:#6c757d;">Clear</button>
+    <select id="pageSizeSelect">
+      <option value="2">2 / page</option>
+      <option value="5">5 / page</option>
+      <option value="10">10 / page</option>
+      <option value="30">30 / page</option>
+    </select>
+    <button id="btnExportSelected" style="display:none;background:#198754;">Export Selected</button>
+    <button id="btnExportAll" style="display:none;background:#6c757d;">Export All</button>
+  </div>
+
   <form id="studentForm">
     <label for="first_name">First Name:</label>
     <input id="first_name" name="first_name" required pattern="[A-Za-z\s-]{2,50}" title="2-50 letters, spaces or hyphens" autocomplete="off" inputmode="text">
@@ -62,6 +123,7 @@
   <table>
     <thead>
       <tr>
+        <th><input type="checkbox" id="chkAll" /></th>
         <th>Student ID</th>
         <th>First Name</th>
         <th>Last Name</th>
@@ -73,6 +135,13 @@
     </thead>
     <tbody id="studentTableBody"></tbody>
   </table>
+
+  <div class="pager" id="pager" style="display:none;">
+    <button id="prevPage" disabled>Prev</button>
+    <span class="info" id="pageInfo">Page 1</span>
+    <span class="range" id="rangeInfo"></span>
+    <button id="nextPage" disabled>Next</button>
+  </div>
 
   <!-- Confirmation modal -->
   <div id="confirmModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
@@ -87,6 +156,9 @@
 
   <script src="/static/auth.js"></script>
   <script>
+    // Fallback legacy token injected from backend (if configured)
+    const LEGACY_TOKEN = "{{ security_token or '' }}";
+
     // Helper for authenticated API requests using the function from auth.js
     async function authFetch(url, options={}) {
       return await authenticatedFetch(url, options);
@@ -114,51 +186,116 @@
       box.className = "message " + colorClass;
     }
 
+    let editingId = null;
+    let searchTerm = "";
+    let currentPage = 1;
+    let totalPages = 1;
+    let pageSize = parseInt(localStorage.getItem('page_size') || '10', 10); // ADDED
+
+    // Initialize dropdown selection
+    (function initPageSize(){
+      const sel = document.getElementById('pageSizeSelect');
+      if(sel){
+        if(![5,10,20,50].includes(pageSize)) pageSize = 10;
+        sel.value = String(pageSize);
+      }
+    })();
+
+    // REPLACED: loadStudents now uses filter API with pagination
     async function loadStudents() {
-      const res = await authFetch("/api/students");
+      const params = new URLSearchParams({
+        page: currentPage,
+        page_size: pageSize
+      });
+      if (searchTerm.trim() !== "") params.append("q", searchTerm.trim());
+
+      const res = await authFetch(`/api/students?${params.toString()}`); // updated endpoint
       if (!res || res.status === 401) return showAuthError();
-      const students = await res.json();
+
+      const data = await res.json();
+      const students = data.items || [];
+      totalPages = data.pages || 1;
+      currentPage = data.page || 1;
+
       const tbody = document.getElementById("studentTableBody");
       tbody.innerHTML = "";
-      students.forEach(s => {
-        const row = document.createElement("tr");
-        row.dataset.id = s.id;
-        row.innerHTML = `
-          <td class="cell-id">${s.id}</td>
-          <td class="cell-first">${s.first_name}</td>
-          <td class="cell-last">${s.last_name}</td>
-          <td class="cell-phone" style="text-align:center;">${s.phone}</td>
-          <td class="cell-birth" style="text-align:center;">${s.birthdate}</td>
-          <td class="cell-email">${s.email}</td>
-          <td style="text-align:center;">
-            <button class="btn-edit">Edit</button>
-            <button class="btn-delete">Delete</button>
-            <button class="btn-details" onclick="openStudentDetails(${s.id})">Details</button>
-            <button class="btn-subjects" onclick="openStudentSubjects(${s.id})">Subjects</button>
-          </td>
-        `;
-        tbody.appendChild(row);
-      });
+      if (students.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#666;">No students found.</td></tr>`;
+      } else {
+        students.forEach(s => {
+          const row = document.createElement("tr");
+          row.dataset.id = s.id;
+          row.innerHTML = `
+            <td style="text-align:center;"><input type="checkbox" class="rowChk" value="${s.id}"></td>
+            <td class="cell-id">${s.id}</td>
+            <td class="cell-first">${s.first_name}</td>
+            <td class="cell-last">${s.last_name}</td>
+            <td class="cell-phone" style="text-align:center;">${s.phone}</td>
+            <td class="cell-birth" style="text-align:center;">${s.birthdate}</td>
+            <td class="cell-email">${s.email}</td>
+            <td style="text-align:center;">
+              <button class="btn-edit">Edit</button>
+              <button class="btn-delete">Delete</button>
+              <button class="btn-details" onclick="openStudentDetails(${s.id})">Details</button>
+              <button class="btn-subjects" onclick="openStudentSubjects(${s.id})">Subjects</button>
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
 
+      // Bind edit/delete again
       document.querySelectorAll('#studentTableBody .btn-edit').forEach(btn => {
         btn.addEventListener('click', onEditClicked);
       });
       document.querySelectorAll('#studentTableBody .btn-delete').forEach(btn => {
         btn.addEventListener('click', onDeleteClicked);
       });
+
+      // Pagination controls (UPDATED)
+      const total = data.total || 0; // new local constant
+      const pager = document.getElementById('pager');
+      pager.style.display = totalPages > 1 || searchTerm ? 'flex' : 'none';
+      document.getElementById('pageInfo').textContent =
+        `Page ${currentPage} / ${totalPages} (Total: ${total})`;
+      const start = students.length ? ((currentPage - 1) * pageSize) + 1 : 0;
+      const end = students.length ? start + students.length - 1 : 0;
+      document.getElementById('rangeInfo').textContent =
+        students.length ? `Showing ${start}-${end}` : '';
+      const prev = document.getElementById('prevPage');
+      const next = document.getElementById('nextPage');
+      prev.disabled = currentPage === 1;
+      next.disabled = (currentPage * pageSize) >= total;  // changed condition
     }
 
     // Email validation: only lowercase allowed and must be a valid email format
     document.getElementById('email').addEventListener('input', function() {
-      const emailVal = this.value;
       const errorEl = document.getElementById('email_error');
-      const emailPattern = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
-      if (/[A-Z]/.test(emailVal)) {
-        errorEl.textContent = "Only small letters are allowed in email.";
-      } else if (emailVal.length > 0 && !emailPattern.test(emailVal)) {
-        errorEl.textContent = "Please enter a valid email address (only small letters).";
+      let val = this.value.trim();
+      // force lowercase + remove spaces
+      if (val !== val.toLowerCase()) {
+        val = val.toLowerCase();
+        this.value = val;
+      }
+      // incremental validation:
+      if (val.length === 0) {
+        errorEl.textContent = '';
+        return;
+      }
+      const hasAt = val.includes('@');
+      const domainPart = hasAt ? val.split('@')[1] : '';
+      const hasDotAfterAt = domainPart && domainPart.includes('.');
+      const fullPattern = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+      // Only show format error when user has typed something like user@domain.t
+      if (hasAt && hasDotAfterAt) {
+        if (!fullPattern.test(val)) {
+          errorEl.textContent = 'Invalid email format (lowercase only).';
+        } else {
+          errorEl.textContent = '';
+        }
       } else {
-        errorEl.textContent = "";
+        // Don't show premature errors
+        errorEl.textContent = '';
       }
     });
 
@@ -170,9 +307,36 @@
       this.value = this.value.replace(/[^A-Za-z\s-]/g, '');
     });
 
-    // Enforce only digits in Phone Number field
+    // REPLACE old phone input handler with stricter first-digit enforcement
     document.getElementById('phone').addEventListener('input', function() {
-      this.value = this.value.replace(/[^0-9]/g, '');
+      const errEl = document.getElementById('phone_error');
+      let raw = this.value.replace(/[^0-9]/g,'');
+      if(raw.length === 0){
+        errEl.textContent = '';
+        this.value = '';
+        return;
+      }
+      // Enforce first digit 5-9
+      if(!/[5-9]/.test(raw[0])){
+        errEl.textContent = 'First digit must be 5-9';
+        // discard invalid first digit
+        raw = raw.slice(1);
+        if(!raw.length){
+          this.value = '';
+          return;
+        }
+        // if new first still invalid after removal keep trimming
+        while(raw.length && !/[5-9]/.test(raw[0])){
+          raw = raw.slice(1);
+        }
+        if(!raw.length){
+          this.value = '';
+          return;
+        }
+      } else {
+        errEl.textContent = '';
+      }
+      this.value = raw.slice(0,10);
     });
 
     document.getElementById("studentForm").addEventListener("submit", async function(e) {
@@ -186,7 +350,10 @@
       const last = document.getElementById("last_name").value.trim();
       const phone = document.getElementById("phone").value.trim();
       const birth = document.getElementById("birthdate").value;
-      const email = document.getElementById("email").value.trim();
+      // CHANGED: normalize email to lowercase before validation
+      const emailInput = document.getElementById("email");
+      emailInput.value = emailInput.value.trim().toLowerCase();
+      const email = emailInput.value;
 
       let hasError = false;
       const nameRe = /^[A-Za-z\s-]{2,50}$/;
@@ -231,6 +398,7 @@
 
       const formData = { first_name: first, last_name: last, phone: phone, birthdate: birth, email };
 
+      const hasToken = !!localStorage.getItem('jwt_token');  // NEW
       let res, result;
       if (editingId) {
         res = await authFetch(`/api/students/${editingId}`, {
@@ -251,19 +419,29 @@
           showMessage(result.message || result.errors, "error");
         }
       } else {
-        res = await authFetch("/api/students", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData)
-        });
-        if (!res || res.status === 401) return showAuthError();
-        result = await res.json();
-        if (result.success) {
-          showMessage("Student registered successfully.", "success");
-          this.reset();
-          loadStudents();
+        // NEW: choose fetch method based on token presence
+        if (hasToken) {
+          res = await authFetch("/api/students", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData)
+          });
         } else {
-          showMessage(result.message || result.errors, "error");
+          // Open self-registration without Authorization header
+          res = await fetch("/api/students", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData)
+          });
+        }
+        if (!res) return;
+        result = await res.json().catch(()=>({}));
+        if (res.ok && result.success) {
+          showMessage("Student registered successfully. You can now log in.", "success");
+          this.reset();
+          if (hasToken) loadStudents(); // only reload list if admin is logged in
+        } else {
+          showMessage((result && (result.detail || result.message || result.errors)) || "Registration failed", "error");
         }
       }
     });
@@ -285,6 +463,13 @@
       if (!res || res.status === 401) return showAuthError();
       const result = await res.json();
       if (result.success) {
+        // NEW: clear edit mode if the deleted row was being edited
+        if (editingId && String(editingId) === String(deleteTargetId)) {
+          editingId = null;
+          document.getElementById('studentForm').reset();
+          document.getElementById('submitBtn').textContent = 'Register';
+          document.getElementById('cancelEditBtn').style.display = 'none';
+        }
         showMessage("Student deleted successfully.", "msg-red");
       } else {
         showMessage(result.message || result.errors, "error");
@@ -316,9 +501,42 @@
       }
     })();
 
-    window.onload = loadStudents;
+    // NEW: search handlers
+    document.getElementById('btnSearch').addEventListener('click', () => {
+      searchTerm = document.getElementById('studentSearch').value;
+      currentPage = 1;
+      loadStudents();
+    });
+    document.getElementById('btnClear').addEventListener('click', () => {
+      document.getElementById('studentSearch').value = '';
+      searchTerm = "";
+      currentPage = 1;
+      loadStudents();
+    });
+    document.getElementById('studentSearch').addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        searchTerm = e.target.value;
+        currentPage = 1;
+        loadStudents();
+      }
+    });
 
-    let editingId = null;
+    // NEW: pagination buttons
+    document.getElementById('prevPage').addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        loadStudents();
+      }
+    });
+    document.getElementById('nextPage').addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        loadStudents();
+      }
+    });
+
+    window.onload = loadStudents;
 
     function onEditClicked(e) {
       const row = e.target.closest('tr');
@@ -349,20 +567,112 @@
     });
 
     function openStudentDetails(id){
+      const role = localStorage.getItem('user_role');
+      if(role === 'admin'){
+        window.location = `/students/${id}`;
+        return;
+      }
       localStorage.setItem('pending_student_id', id);
       localStorage.setItem('after_login_target', 'details');
       window.location = '/student-login';
     }
     function openStudentSubjects(id){
+      const role = localStorage.getItem('user_role');
+      if(role === 'admin'){
+        // Admin can directly view subjects page
+        window.location = `/students/${id}/subjects`;
+        return;
+      }
       localStorage.setItem('pending_student_id', id);
       localStorage.setItem('after_login_target', 'subjects');
       window.location = '/student-login';
     }
+
+    // Page size change
+    document.getElementById('pageSizeSelect').addEventListener('change', function(){
+      pageSize = parseInt(this.value,10);
+      localStorage.setItem('page_size', pageSize);
+      currentPage = 1;
+      loadStudents();
+    });
+
+    // Show export buttons only for admin
+    (function(){
+      const role = localStorage.getItem('user_role');
+      if(role === 'admin'){
+        document.getElementById('btnExportSelected').style.display='inline-block';
+        document.getElementById('btnExportAll').style.display='inline-block';
+      }
+    })();
+
+    // Master checkbox
+    document.getElementById('chkAll').addEventListener('change', function(){
+      document.querySelectorAll('.rowChk').forEach(c => c.checked = this.checked);
+    });
+
+    async function exportCsv(url, filename){
+      const token = localStorage.getItem('jwt_token');
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = 'Bearer ' + token;
+      } else if (LEGACY_TOKEN) {
+        headers['X-SECURITY-TOKEN'] = LEGACY_TOKEN;
+      } else {
+        showMessage('Not authenticated (admin export requires login).', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch(url, { headers });
+        if(!res.ok){
+          let detailTxt = '';
+          try {
+            const d = await res.json();
+            if (typeof d.detail === 'string') {
+              detailTxt = d.detail;
+            } else if (d.detail !== undefined) {
+              detailTxt = JSON.stringify(d.detail);
+            } else {
+              detailTxt = JSON.stringify(d);
+            }
+          } catch {}
+            // Trim if huge
+          if (detailTxt.length > 180) detailTxt = detailTxt.slice(0,177) + '...';
+          console.warn('Export failed', res.status, detailTxt);
+          showMessage('Export failed' + (detailTxt ? ' (' + detailTxt + ')' : ''), 'error');
+          return;
+        }
+        const blob = await res.blob();
+        if(!blob || blob.size === 0){
+          showMessage('Empty export (no data)', 'error');
+          return;
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+        showMessage('Export started...', 'success');
+      } catch (e){
+        console.error('Export exception', e);
+        showMessage('Export error (network)', 'error');
+      }
+    }
+
+    document.getElementById('btnExportSelected').addEventListener('click', () => {
+      const ids = Array.from(document.querySelectorAll('.rowChk:checked')).map(c=>c.value);
+      if(ids.length === 0){
+        showMessage('Select at least one student to export','error');
+        return;
+      }
+      exportCsv(`/api/students/export-all?ids=${ids.join(',')}`, 'students_selected.csv');  <!-- CHANGED -->
+    });
+
+    document.getElementById('btnExportAll').addEventListener('click', () => {
+      exportCsv('/api/students/export-all', 'students_all.csv');  <!-- CHANGED -->
+    });
   </script>
-  <!-- Replaced single logout button with login + logout buttons -->
-  <div style="margin-top:10px;">
-    <button onclick="window.location='/student-login'" style="background:#198754;color:#fff;margin-right:6px;">Student Login</button>
-    <button onclick="logout()" style="background:#dc3545;color:#fff;">Logout</button>
-  </div>
 </body>
 </html>

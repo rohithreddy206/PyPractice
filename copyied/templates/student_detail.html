@@ -72,7 +72,15 @@
 </style>
 </head>
 <body>
-  <a class="back" href="/">← Back</a>
+  <a class="back" href="/" id="backLink">← Back</a>
+  <script>
+    (function(){
+      const role = localStorage.getItem('user_role');
+      if(role && role !== 'admin'){
+        document.getElementById('backLink').setAttribute('href','/login');
+      }
+    })();
+  </script>
   <h2>Student #{{ student_id }}</h2>
 
   <div id="toastContainer"></div>
@@ -105,6 +113,14 @@
       <div class="divider"></div>
       <div class="muted" style="line-height:1.5;">
         Use the panels on the right to manage enrolled subjects. Click a subject pill to select it for removal or addition.
+        <span id="editHint" style="display:none;">You are editing your profile.</span>
+      </div>
+      <!-- NEW: profile edit toolbar -->
+      <div class="toolbar" id="profileEditBar" style="display:none;margin-top:10px;">
+        <button class="primary" id="btnEdit" onclick="enterEdit()">Edit Profile</button>
+        <button class="primary" id="btnSave" style="display:none;" onclick="saveProfile()">Save</button>
+        <button class="outline" id="btnCancel" style="display:none;" onclick="cancelEdit()">Cancel</button>
+        <button class="outline" id="btnExport" onclick="exportStudent()">Export CSV</button> <!-- NEW -->
       </div>
     </div>
 
@@ -176,6 +192,9 @@ const enrolledCount = document.getElementById('enrolledCount');
 const selRemoveBadge = document.getElementById('selectedRemove');
 const selAddBadge = document.getElementById('selectedAdd');
 
+let detailData = null;
+let editingProfile = false;
+
 function pill(label, id, type) {
   const d = document.createElement('div');
   d.className = 'pill ' + type;
@@ -203,35 +222,184 @@ function syncButtons() {
   else { selAddBadge.style.display='none'; }
 }
 
+function canEditProfile(){
+  const role = localStorage.getItem('user_role');
+  const sid = parseInt(localStorage.getItem('student_id') || '-1', 10);
+  return role === 'admin' || sid === studentId;
+}
+
+function renderProfileView(){
+  if(!detailData) return;
+  const grid = document.getElementById('infoGrid');
+  grid.innerHTML = `
+    <div>
+      <div class="label">First Name</div>
+      <div class="value">${detailData.first_name}</div>
+    </div>
+    <div>
+      <div class="label">Last Name</div>
+      <div class="value">${detailData.last_name}</div>
+    </div>
+    <div>
+      <div class="label">Phone</div>
+      <div class="value">${detailData.phone}</div>
+    </div>
+    <div>
+      <div class="label">Email</div>
+      <div class="value">${detailData.email}</div>
+    </div>
+    <div>
+      <div class="label">Birthdate</div>
+      <div class="value">${detailData.birthdate}</div>
+    </div>
+  `;
+  editingProfile = false;
+  document.getElementById('btnEdit').style.display = canEditProfile() ? 'inline-flex' : 'none';
+  document.getElementById('btnSave').style.display = 'none';
+  document.getElementById('btnCancel').style.display = 'none';
+  document.getElementById('editHint').style.display = 'none';
+}
+
+function enterEdit(){
+  if(!canEditProfile() || !detailData) return;
+  editingProfile = true;
+  const grid = document.getElementById('infoGrid');
+  grid.innerHTML = `
+    <div>
+      <div class="label">First Name</div>
+      <input id="inFirst" type="text" value="${detailData.first_name}" pattern="^[A-Za-z\\s-]{2,50}$" required style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;">
+    </div>
+    <div>
+      <div class="label">Last Name</div>
+      <input id="inLast" type="text" value="${detailData.last_name}" pattern="^[A-Za-z\\s-]{2,50}$" required style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;">
+    </div>
+    <div>
+      <div class="label">Phone</div>
+      <input id="inPhone" type="text" value="${detailData.phone}" pattern="^[5-9][0-9]{9}$" maxlength="10" required style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;">
+    </div>
+    <div>
+      <div class="label">Email</div>
+      <input id="inEmail" type="email" value="${detailData.email}" required style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;">
+    </div>
+    <div>
+      <div class="label">Birthdate</div>
+      <input id="inBirth" type="date" value="${detailData.birthdate}" required style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;">
+    </div>
+  `;
+  // ADD: realtime phone validation (first digit 5-9)
+  const ph = document.getElementById('inPhone');
+  if(ph){
+    ph.addEventListener('input', () => {
+      let raw = ph.value.replace(/[^0-9]/g,'');
+      if(raw.length){
+        if(!/[5-9]/.test(raw[0])){
+          // strip invalid leading digits until valid or empty
+          while(raw.length && !/[5-9]/.test(raw[0])){
+            raw = raw.slice(1);
+          }
+        }
+      }
+      ph.value = raw.slice(0,10);
+    });
+  }
+
+  document.getElementById('btnEdit').style.display = 'none';
+  document.getElementById('btnSave').style.display = 'inline-flex';
+  document.getElementById('btnCancel').style.display = 'inline-flex';
+  document.getElementById('editHint').style.display = 'inline';
+}
+
+function cancelEdit(){
+  renderProfileView();
+}
+
+function validateProfile(first,last,phone,email,birth){
+  const nameRe=/^[A-Za-z\s-]{2,50}$/;
+  const phoneRe=/^[5-9][0-9]{9}$/;
+  const emailRe=/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+  if(!nameRe.test(first)) return "Invalid first name";
+  if(!nameRe.test(last)) return "Invalid last name";
+  if(!phoneRe.test(phone)) return "Invalid phone";
+  if(!emailRe.test(email)) return "Invalid email (lowercase only)";
+  if(!birth) return "Birthdate required";
+  if(new Date(birth) > new Date()) return "Birthdate cannot be future";
+  return null;
+}
+
+async function saveProfile(){
+  if(!editingProfile) return;
+  const first = document.getElementById('inFirst').value.trim();
+  const last = document.getElementById('inLast').value.trim();
+  const phone = document.getElementById('inPhone').value.trim();
+  const email = document.getElementById('inEmail').value.trim();
+  const birth = document.getElementById('inBirth').value;
+  const err = validateProfile(first,last,phone,email,birth);
+  if(err){ toast(err,'error',2600); return; }
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true;
+  try{
+    const res = await fetch(`/api/students/${studentId}`,{
+      method:'PUT',
+      headers:{
+        'Authorization':'Bearer '+jwtToken,
+        'Content-Type':'application/json'
+      },
+      body: JSON.stringify({
+        first_name:first,
+        last_name:last,
+        phone:phone,
+        birthdate:birth,
+        email:email
+      })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.success){
+      toast(data.detail || data.message || 'Update failed','error');
+    } else {
+      toast('Profile updated','success');
+      await load(); // reload full data
+    }
+  } catch {
+    toast('Network error','error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// MODIFY load(): capture detailData & render / show toolbar
 async function load() {
   const r = await authFetch(`/api/students/${studentId}`);
   if(!r.ok){
     toast('Unable to load student','error');
     return;
   }
-  const data = await r.json();
-  vName.textContent = data.first_name + ' ' + data.last_name;
-  vPhone.textContent = data.phone;
-  vEmail.textContent = data.email;
-  vBirth.textContent = data.birthdate;
-  enrolledCount.textContent = 'Subjects: ' + data.enrolled_subjects.length;
+  detailData = await r.json();
+  vName.textContent = detailData.first_name + ' ' + detailData.last_name;
+  vPhone.textContent = detailData.phone;
+  vEmail.textContent = detailData.email;
+  vBirth.textContent = detailData.birthdate;
+  enrolledCount.textContent = 'Subjects: ' + detailData.enrolled_subjects.length;
+
+  renderProfileView();
+  if(canEditProfile()){
+    document.getElementById('profileEditBar').style.display='flex';
+  }
 
   // Enrolled
   enrolledList.innerHTML = '';
-  if(data.enrolled_subjects.length === 0){
+  if(detailData.enrolled_subjects.length === 0){
     enrolledList.innerHTML = '<div class="empty">No subjects enrolled.</div>';
   } else {
-    data.enrolled_subjects.forEach(s => enrolledList.appendChild(pill(s.name, s.id, 'enrolled')));
+    detailData.enrolled_subjects.forEach(s => enrolledList.appendChild(pill(s.name, s.id, 'enrolled')));
   }
 
   // Available
   availableList.innerHTML = '';
-  if(data.available_subjects.length === 0){
+  if(detailData.available_subjects.length === 0){
     availableList.innerHTML = '<div class="empty">No more subjects to add.</div>';
   } else {
-    data.available_subjects.forEach(s => availableList.appendChild(pill(s.name, s.id, 'available')));
+    detailData.available_subjects.forEach(s => availableList.appendChild(pill(s.name, s.id, 'available')));
   }
-
   syncButtons();
 }
 
@@ -269,10 +437,31 @@ removeBtn.addEventListener('click', async () => {
   await load();
 });
 
+function exportStudent(){
+  const token = localStorage.getItem('jwt_token');
+  if(!token){ toast('Not authenticated','error'); return; }
+  fetch(`/api/students/${studentId}/export`, {
+    headers:{ 'Authorization':'Bearer '+token }
+  }).then(async res => {
+    if(!res.ok){
+      const d = await res.json().catch(()=>({}));
+      toast(d.detail || 'Export failed','error');
+      return;
+    }
+    return res.blob();
+  }).then(blob => {
+    if(!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `student_${studentId}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }).catch(()=> toast('Export error','error'));
+}
+
 load();
-</script>
-</body>
-</html>
 </script>
 </body>
 </html>

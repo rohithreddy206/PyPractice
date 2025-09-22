@@ -17,65 +17,125 @@
     .hint { font-size:12px; color:#555; margin-top:8px; text-align:center; }
     a.small { display:block; text-align:center; margin-top:14px; font-size:13px; color:#007bff; text-decoration:none; }
     a.small:hover { text-decoration:underline; }
+    .tabs { display:flex; gap:6px; margin-bottom:14px; }
+    .tabs button { flex:1; padding:8px 10px; background:#e1e6ef; border:none; border-radius:6px; cursor:pointer; font-weight:600; }
+    .tabs button.active { background:#007bff; color:#fff; }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Login</h2>
-    <form id="loginForm">
-      <label for="username">Username</label>
-      <input type="text" id="username" name="username" required placeholder="Enter username" autocomplete="username">
-      <label for="password" style="margin-top:12px;">Password</label>
-      <input type="password" id="password" name="password" required placeholder="Enter password" autocomplete="current-password">
-      <div class="hint" style="color:#007bff;font-weight:bold;margin-top:8px;">Default: admin / admin</div>
-      <button type="submit" id="loginBtn">Login</button>
-      <button type="button" id="logoutBtn" style="display:none;margin-top:10px;background:#dc3545;">Logout</button>
+    <div class="tabs">
+      <button id="tabAdmin" class="active" onclick="switchMode('admin')">Admin</button>
+      <button id="tabStudent" onclick="switchMode('student')">Student</button>
+    </div>
+
+    <!-- Admin (username login) -->
+    <form id="adminForm">
+      <label for="admin_user">Admin Username</label>
+      <input id="admin_user" type="text" value="admin" required>
+      <label for="admin_pass">Password</label>
+      <input id="admin_pass" type="password" required>
+      <div class="hint">Default: admin / admin123</div>
+      <button type="submit" id="adminLoginBtn">Login as Admin</button>
     </form>
+
+    <!-- Student -->
+    <form id="studentForm" class="hidden">
+      <label for="student_id_login">Student ID</label>
+      <input id="student_id_login" type="number" min="1" required placeholder="e.g. 5">
+      <label for="student_pass_login">Password</label>
+      <input id="student_pass_login" type="password" required>
+      <div class="hint">Password format: first_name + 123 (e.g. John123)</div>
+      <button type="submit" id="studentLoginBtn">Login as Student</button>
+    </form>
+
+    <button id="logoutBtn" style="display:none;margin-top:12px;background:#dc3545;">Logout</button>
     <div id="msg" class="msg"></div>
-    <div class="hint">Enter your username and password to access the system.</div>
-    <div id="error" style="color:red;"></div>
   </div>
-  <script src="/static/auth.js"></script>
+
   <script>
-    // Show logout button if already logged in
-    if (localStorage.getItem('security_token')) {
-      document.getElementById('logoutBtn').style.display = 'block';
-    }
-    document.getElementById('logoutBtn').onclick = function() {
-      localStorage.removeItem('security_token');
-      window.location.reload();
-    };
-    document.getElementById('loginForm').onsubmit = async function(e) {
-        e.preventDefault();
-        document.getElementById('error').innerText = '';
-        const btn = document.getElementById('loginBtn');
-        btn.disabled = true;
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        try {
-            const res = await fetch('/custom-login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password})
-            });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.token) {
-                    localStorage.setItem('security_token', data.token);
-                    // Force reload to ensure token is checked
-                    window.location.replace('/');
-                } else {
-                    document.getElementById('error').innerText = 'Login failed: No token received.';
-                }
-            } else {
-                const err = await res.json();
-                document.getElementById('error').innerText = err.error || 'Invalid credentials';
-            }
-        } catch (e) {
-            document.getElementById('error').innerText = 'Network error. Please try again.';
-        }
-        btn.disabled = false;
-    };
+function switchMode(m){
+  document.getElementById('tabAdmin').classList.toggle('active', m==='admin');
+  document.getElementById('tabStudent').classList.toggle('active', m==='student');
+  document.getElementById('adminForm').classList.toggle('hidden', m!=='admin');
+  document.getElementById('studentForm').classList.toggle('hidden', m!=='student');
+  document.getElementById('msg').style.display='none';
+}
+function showMsg(t, ok=false){
+  const m=document.getElementById('msg');
+  m.textContent=t;
+  m.className='msg '+(ok?'success':'error');
+  m.style.display='block';
+}
+function storeSession(token, role, sid){
+  localStorage.setItem('jwt_token', token);
+  localStorage.setItem('user_role', role);
+  if(sid) localStorage.setItem('student_id', sid);
+}
+function afterLogin(role, sid){
+  if(role==='admin'){
+    window.location.replace('/');
+  } else {
+    window.location.replace(`/students/${sid}`);
+  }
+}
+async function doStudentLogin(student_id, password){
+  const res = await fetch('/api/login', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({student_id, password})
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.detail || 'Login failed');
+  return data;
+}
+async function doAdminLogin(username, password){
+  const res = await fetch('/api/login', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username, password})
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.detail || 'Login failed');
+  return data;
+}
+document.getElementById('adminForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  try{
+    const d = await doAdminLogin(
+      document.getElementById('admin_user').value.trim(),
+      document.getElementById('admin_pass').value
+    );
+    storeSession(d.access_token, d.role, d.student_id);
+    showMsg('Admin login success. Redirecting...', true);
+    setTimeout(()=>afterLogin(d.role, d.student_id), 500);
+  }catch(err){ showMsg(err.message); }
+});
+document.getElementById('studentForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  try{
+    const d = await doStudentLogin(
+      parseInt(document.getElementById('student_id_login').value,10),
+      document.getElementById('student_pass_login').value
+    );
+    storeSession(d.access_token, d.role, d.student_id);
+    showMsg('Student login success. Redirecting...', true);
+    setTimeout(()=>afterLogin(d.role, d.student_id), 500);
+  }catch(err){ showMsg(err.message); }
+});
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  localStorage.removeItem('jwt_token');
+  localStorage.removeItem('user_role');
+  localStorage.removeItem('student_id');
+  location.reload();
+});
+(function init(){
+  if(localStorage.getItem('jwt_token')){
+    document.getElementById('logoutBtn').style.display='block';
+  }
+})();
   </script>
 </body>
 </html>

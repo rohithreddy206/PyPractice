@@ -28,11 +28,12 @@
       <label for="student_id">Student ID</label>
       <input id="student_id" type="number" min="1" required placeholder="e.g. 5">
       <label for="student_password">Password</label>
-      <input id="student_password" type="password" required placeholder="Your password">
+      <input id="student_password" type="password" required>
+      <div class="hint">Password = first_name + 123 (case sensitive)</div>
       <button type="submit">Login</button>
     </form>
     <div id="studentMsg" class="msg"></div>
-    <a class="link" href="/login">Admin login</a>
+    <a class="link" href="/login">Unified login (Admin / Student)</a>
   </div>
   <script src="/static/auth.js"></script>
 </body>
