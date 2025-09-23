@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 import io, csv
 from fastapi.responses import StreamingResponse
+from time import time  # NEW
+from collections import defaultdict  # NEW
 # NEW: pandas import (with graceful fallback)
 try:
     import pandas as pd
@@ -332,39 +334,120 @@ def export_single_student_excel(student_id: int, request: Request):
 # Templates
 templates = Jinja2Templates(directory="templates")
 
+# ==== FAILED LOGIN ATTEMPT TRACKING (NEW) ====
+LOGIN_MAX_ATTEMPTS = 3
+LOGIN_WINDOW_SEC = 60
+_login_failures = defaultdict(list)  # ip -> [timestamps]
+
+def _purge_old(ip: str):
+    now = time()
+    bucket = _login_failures[ip]
+    while bucket and now - bucket[0] >= LOGIN_WINDOW_SEC:
+        bucket.pop(0)
+
+def _status(ip: str):
+    _purge_old(ip)
+    used = len(_login_failures[ip])
+    remaining = max(0, LOGIN_MAX_ATTEMPTS - used)
+    locked = used >= LOGIN_MAX_ATTEMPTS
+    retry_after = 0
+    if locked and _login_failures[ip]:
+        retry_after = int(LOGIN_WINDOW_SEC - (time() - _login_failures[ip][0]))
+        if retry_after < 0: retry_after = 0
+    return used, remaining, locked, retry_after
+
+def _record_failure(ip: str):
+    _purge_old(ip)
+    _login_failures[ip].append(time())
+    return _status(ip)
+
+def _clear_failures(ip: str):
+    _login_failures.pop(ip, None)
+# ==== END FAILED LOGIN ATTEMPT TRACKING ====
+
 @app.post("/api/login")
-async def api_login(payload: dict = Body(...)):
+async def api_login(payload: dict = Body(...), request: Request = None):  # MODIFIED (added request + logic)
     """
     Mixed login:
       Admin: username == 'admin' and password == 'admin123'
       Student: student_id + password (password = first_name + '123')
     """
+    client_ip = request.client.host if request and request.client else "unknown"
+    used, remaining, locked, retry = _status(client_ip)
+    if locked:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": "Too many failed login attempts. Please wait.",
+                "locked": True,
+                "retry_after_seconds": retry,
+                "lock_expires_at": int(time()) + retry,
+                "attempts_used": used,
+                "attempts_remaining": 0,
+                "limit": LOGIN_MAX_ATTEMPTS,
+                "window_seconds": LOGIN_WINDOW_SEC
+            }
+        )
+
     username = payload.get("username")
     password = payload.get("password")
-    if username:
+
+    def fail(detail: str):
+        u, r, l, ry = _record_failure(client_ip)
+        return JSONResponse(
+            status_code=429 if l else 401,
+            content={
+                "detail": detail,
+                "locked": l,
+                "retry_after_seconds": ry if l else 0,
+                "lock_expires_at": (int(time()) + ry) if l else None,
+                "attempts_used": u,
+                "attempts_remaining": r,
+                "limit": LOGIN_MAX_ATTEMPTS,
+                "window_seconds": LOGIN_WINDOW_SEC,
+                "message": f"{u}/{LOGIN_MAX_ATTEMPTS} attempts used ({r} left)"
+            }
+        )
+
+    if username:  # admin branch
         if username == "admin" and password == "admin123":
+            _clear_failures(client_ip)
             token = create_access_token({"sub": "0", "role": "admin"})
-            return {"access_token": token, "token_type": "bearer", "role": "admin", "student_id": 0}  # reverted
-        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+            return {
+                "access_token": token,
+                "token_type": "bearer",
+                "role": "admin",
+                "student_id": 0,
+                "attempts_used": 0,
+                "attempts_remaining": LOGIN_MAX_ATTEMPTS
+            }
+        return fail("Invalid admin credentials")
 
     student_id = payload.get("student_id")
     if student_id is None:
-        raise HTTPException(status_code=400, detail="student_id or username required")
+        return fail("student_id or username required")
 
-    # Fetch first_name to validate dynamic password rule
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT first_name FROM students WHERE id=?", (student_id,))
     row = cur.fetchone()
     cur.close(); conn.close()
     if not row:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        return fail("Invalid credentials")
     expected = row["first_name"] + "123"
     if password != expected:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        return fail("Invalid credentials")
 
+    _clear_failures(client_ip)
     token = create_access_token({"sub": str(student_id), "role": "student"})
-    return {"access_token": token, "token_type": "bearer", "role": "student", "student_id": student_id}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": "student",
+        "student_id": student_id,
+        "attempts_used": 0,
+        "attempts_remaining": LOGIN_MAX_ATTEMPTS
+    }
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):

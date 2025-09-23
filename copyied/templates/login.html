@@ -81,14 +81,63 @@ function afterLogin(role, sid){
     window.location.replace(`/students/${sid}`);
   }
 }
+const LOGIN_MAX_ATTEMPTS = 3;
+const ADMIN_LOCK_KEY = 'admin_login_lock';
+const STUD_LOCK_KEY  = 'student_tab_login_lock';
+
+function startLockCountdown(lockKey, seconds, btn, msgEl){
+  const until = Date.now() + seconds*1000;
+  localStorage.setItem(lockKey, until);
+  if (btn) btn.disabled = true;
+  function tick(){
+    const remain = until - Date.now();
+    if (remain <= 0){
+      localStorage.removeItem(lockKey);
+      if (btn) btn.disabled = false;
+      if (msgEl){
+        showMsg('You can try again now.', true);
+      }
+      return;
+    }
+    const s = Math.ceil(remain/1000);
+    if (msgEl){
+      showMsg(`Too many failed attempts. Wait ${s}s`, false);
+    }
+    setTimeout(tick, 1000);
+  }
+  tick();
+}
+function restoreLock(lockKey, btn, msgEl){
+  const untilStr = localStorage.getItem(lockKey);
+  if(!untilStr) return;
+  const until = parseInt(untilStr,10);
+  if(isNaN(until) || until <= Date.now()){
+    localStorage.removeItem(lockKey);
+    return;
+  }
+  const remain = Math.ceil((until - Date.now())/1000);
+  startLockCountdown(lockKey, remain, btn, msgEl);
+}
+
 async function doStudentLogin(student_id, password){
   const res = await fetch('/api/login', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({student_id, password})
   });
-  const data = await res.json();
-  if(!res.ok) throw new Error(data.detail || 'Login failed');
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){
+    if (data.locked){
+      startLockCountdown(STUD_LOCK_KEY, data.retry_after_seconds || 60,
+        document.getElementById('studentLoginBtn'),
+        document.getElementById('msg'));
+    } else {
+      const used = data.attempts_used ?? 0;
+      const left = data.attempts_remaining ?? (LOGIN_MAX_ATTEMPTS - used);
+      showMsg((data.detail || 'Login failed')+` (${used}/${LOGIN_MAX_ATTEMPTS} used, ${left} left)`);
+    }
+    throw new Error(data.detail || 'Login failed');
+  }
   return data;
 }
 async function doAdminLogin(username, password){
@@ -97,12 +146,28 @@ async function doAdminLogin(username, password){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username, password})
   });
-  const data = await res.json();
-  if(!res.ok) throw new Error(data.detail || 'Login failed');
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){
+    if (data.locked){
+      startLockCountdown(ADMIN_LOCK_KEY, data.retry_after_seconds || 60,
+        document.getElementById('adminLoginBtn'),
+        document.getElementById('msg'));
+    } else {
+      const used = data.attempts_used ?? 0;
+      const left = data.attempts_remaining ?? (LOGIN_MAX_ATTEMPTS - used);
+      showMsg((data.detail || 'Login failed')+` (${used}/${LOGIN_MAX_ATTEMPTS} used, ${left} left)`);
+    }
+    throw new Error(data.detail || 'Login failed');
+  }
   return data;
 }
+
+restoreLock(ADMIN_LOCK_KEY, document.getElementById('adminLoginBtn'), document.getElementById('msg'));
+restoreLock(STUD_LOCK_KEY, document.getElementById('studentLoginBtn'), document.getElementById('msg'));
+
 document.getElementById('adminForm').addEventListener('submit', async e=>{
   e.preventDefault();
+  if (document.getElementById('adminLoginBtn').disabled) return;
   try{
     const d = await doAdminLogin(
       document.getElementById('admin_user').value.trim(),
@@ -111,10 +176,11 @@ document.getElementById('adminForm').addEventListener('submit', async e=>{
     storeSession(d.access_token, d.role, d.student_id);
     showMsg('Admin login success. Redirecting...', true);
     setTimeout(()=>afterLogin(d.role, d.student_id), 500);
-  }catch(err){ showMsg(err.message); }
+  }catch(_){}
 });
 document.getElementById('studentForm').addEventListener('submit', async e=>{
   e.preventDefault();
+  if (document.getElementById('studentLoginBtn').disabled) return;
   try{
     const d = await doStudentLogin(
       parseInt(document.getElementById('student_id_login').value,10),
@@ -123,7 +189,7 @@ document.getElementById('studentForm').addEventListener('submit', async e=>{
     storeSession(d.access_token, d.role, d.student_id);
     showMsg('Student login success. Redirecting...', true);
     setTimeout(()=>afterLogin(d.role, d.student_id), 500);
-  }catch(err){ showMsg(err.message); }
+  }catch(_){}
 });
 document.getElementById('logoutBtn').addEventListener('click', ()=>{
   localStorage.removeItem('jwt_token');
