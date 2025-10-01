@@ -1,5 +1,6 @@
-from fastapi import Request, HTTPException
-from starlette.responses import JSONResponse
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from jose import jwt, JWTError
 import os
 from dotenv import load_dotenv
 
@@ -8,31 +9,44 @@ load_dotenv()
 
 # Get token from environment
 SECURITY_TOKEN = os.getenv("SECURITY_TOKEN")
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_SECRET")
+ALGORITHM = "HS256"
 
-async def auth_middleware(request: Request, call_next):
-    # Allow unauthenticated access to login and static/template routes
-    if request.url.path in ["/login", "/custom-login", "/"] or request.url.path.startswith("/static"):
-        response = await call_next(request)
-        return response
+async def selective_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    # Allow public profile images, non-API, and login endpoint
+    if path.startswith("/api/profile-image/") or not path.startswith("/api/") or path == "/api/login":
+        return await call_next(request)
 
-    # Check for Authorization header
     auth_header = request.headers.get("Authorization")
-    # log token for debugging
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return JSONResponse(
-            {"error": "Missing or invalid Authorization header"},
-            status_code=401
-        )
-    
-    token = auth_header[7:]
-    # Replace with your token check logic
-    from os import getenv
-    if token != getenv("SECURITY_TOKEN"):
-        return JSONResponse(
-            {"error": "Invalid or expired token"},
-            status_code=401
-        )
-    
-    # Token is valid, proceed with the request
-    response = await call_next(request)
-    return response
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            user_id = int(payload.get("sub"))
+            role = payload.get("role", "student")
+            if user_id is None:
+                raise JWTError("Missing sub")
+            request.state.user = {"id": user_id, "role": role, "legacy": False}
+        except JWTError:
+            legacy_token = request.headers.get("X-SECURITY-TOKEN") or request.query_params.get("token")
+            if legacy_token and SECURITY_TOKEN and legacy_token == SECURITY_TOKEN:
+                request.state.user = {"id": 0, "role": "admin", "legacy": True}
+            else:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid token. Obtain a new token via POST /api/login"}
+                )
+    else:
+        legacy_token = request.headers.get("X-SECURITY-TOKEN") or request.query_params.get("token")
+        if legacy_token and SECURITY_TOKEN and legacy_token == SECURITY_TOKEN:
+            request.state.user = {"id": 0, "role": "admin", "legacy": True}
+        else:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Invalid or missing token. Use Authorization: Bearer <JWT> from /api/login "
+                              "or provide X-SECURITY-TOKEN header (legacy)."
+                }
+            )
+    return await call_next(request)

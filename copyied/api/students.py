@@ -1,9 +1,10 @@
 import logging
 import sqlite3
-from fastapi import APIRouter, HTTPException, Query
+import uuid, os  # NEW
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File  # NEW
 from starlette.requests import Request
 from database import get_db_connection
-from models import StudentCreate, StudentUpdate, StudentWithSubjects, SubjectOut, SubjectIds, PaginatedStudents
+from schemas import StudentCreate, StudentUpdate, StudentWithSubjects, SubjectOut, SubjectIds, PaginatedStudents
 
 try:
     import pandas as pd
@@ -12,6 +13,9 @@ except ImportError:
 
 router = APIRouter()
 
+PROFILE_IMAGE_DIR = "profile_images"  # NEW
+os.makedirs(PROFILE_IMAGE_DIR, exist_ok=True)  # NEW
+
 # NEW: pandas helper for student + subjects
 def _pd_fetch_student_and_subjects(student_id: int):
     if not pd:
@@ -19,7 +23,7 @@ def _pd_fetch_student_and_subjects(student_id: int):
     conn = get_db_connection()
     try:
         df_student = pd.read_sql_query(
-            "SELECT id, first_name, last_name, number AS phone, birthdate, email FROM students WHERE id=?",
+            "SELECT id, first_name, last_name, number AS phone, birthdate, email, profile_image_guid FROM students WHERE id=?",
             conn, params=[student_id]
         )
         if df_student.empty:
@@ -141,7 +145,13 @@ def get_students_noslash(
     return get_students(q=q, page=page, page_size=page_size)
 
 @router.put("/{student_id}", response_model=dict)
-def update_student(student_id: int, student: StudentUpdate):
+def update_student(student_id: int, student: StudentUpdate, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can edit any student, student only their own
+    if user["role"] != "admin" and user["id"] != student_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM students WHERE number=? AND id!=?", (student.phone, student_id))
@@ -164,7 +174,13 @@ def update_student(student_id: int, student: StudentUpdate):
     return {"success": True, "message": "Student updated successfully!"}
 
 @router.delete("/{student_id}", response_model=dict)
-def delete_student(student_id: int):
+def delete_student(student_id: int, request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can delete any student, student only their own
+    if user["role"] != "admin" and user["id"] != student_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM students WHERE id=?", (student_id,))
@@ -181,6 +197,7 @@ def get_student_with_subjects(student_id: int, request: Request):
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can access any student, student only their own
     if user["role"] != "admin" and user["id"] != student_id:
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -194,7 +211,7 @@ def get_student_with_subjects(student_id: int, request: Request):
     # ...existing code (fallback original SQL)...
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, first_name, last_name, number AS phone, birthdate, email FROM students WHERE id=?", (student_id,))
+    cur.execute("SELECT id, first_name, last_name, number AS phone, birthdate, email, profile_image_guid FROM students WHERE id=?", (student_id,))
     row = cur.fetchone()
     if not row:
         conn.close()
@@ -216,11 +233,43 @@ def get_student_with_subjects(student_id: int, request: Request):
     cur.close(); conn.close()
     return {**dict(row), "enrolled_subjects": enrolled, "available_subjects": available}
 
+@router.post("/{student_id}/profile-image", response_model=dict)  # NEW
+def upload_profile_image(student_id: int, request: Request, file: UploadFile = File(...)):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can upload image for any student, student only their own
+    if user["role"] != "admin" and user["id"] != student_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    # basic content-type check
+    if file.content_type not in ("image/png", "image/jpeg", "image/jpg", "image/webp"):
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        # derive from content-type if extension missing
+        ext = ".jpg" if "jpeg" in file.content_type else ".png"
+    guid = uuid.uuid4().hex
+    fname = f"{guid}{ext}"
+    path = os.path.join(PROFILE_IMAGE_DIR, fname)
+    with open(path, "wb") as out:
+        out.write(file.file.read())
+    # persist guid (not filename per requirement)
+    conn = get_db_connection(); cur = conn.cursor()
+    cur.execute("UPDATE students SET profile_image_guid=? WHERE id=?", (guid, student_id))
+    if cur.rowcount == 0:
+        conn.rollback(); cur.close(); conn.close()
+        try: os.remove(path)
+        except: pass
+        raise HTTPException(status_code=404, detail="Student not found")
+    conn.commit(); cur.close(); conn.close()
+    return {"success": True, "profile_image_guid": guid, "url": f"/api/profile-image/{guid}"}
+
 @router.get("/{student_id}/subjects", response_model=list[SubjectOut])
 def get_student_subjects_only(student_id: int, request: Request):
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can view any student's subjects, student only their own
     if user["role"] != "admin" and user["id"] != student_id:
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -267,6 +316,7 @@ def add_subjects_to_student(student_id: int, payload: SubjectIds, request: Reque
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can add subjects for any student, student only their own
     if user["role"] != "admin" and user["id"] != student_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     if not payload.subject_ids:
@@ -297,6 +347,7 @@ def remove_subjects_from_student(student_id: int, payload: SubjectIds, request: 
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can remove subjects for any student, student only their own
     if user["role"] != "admin" and user["id"] != student_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     if not payload.subject_ids:
@@ -320,6 +371,7 @@ def add_subjects_to_student(student_id: int, payload: SubjectIds, request: Reque
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    # Admin can add subjects for any student, student only their own
     if user["role"] != "admin" and user["id"] != student_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     if not payload.subject_ids:

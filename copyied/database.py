@@ -27,6 +27,8 @@ def create_db():
         # SQLite cannot add a column with a non-constant default; add then backfill.
         cursor.execute("ALTER TABLE students ADD COLUMN created_at TEXT")
         cursor.execute("UPDATE students SET created_at = datetime('now') WHERE created_at IS NULL")
+    if "profile_image_guid" not in cols:
+        cursor.execute("ALTER TABLE students ADD COLUMN profile_image_guid TEXT")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tblSubject(
             id INTEGER PRIMARY KEY,

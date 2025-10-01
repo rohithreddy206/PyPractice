@@ -39,6 +39,7 @@
       <input id="admin_pass" type="password" required>
       <div class="hint">Default: admin / admin123</div>
       <button type="submit" id="adminLoginBtn">Login as Admin</button>
+      <div id="adminMsg" class="msg"></div> <!-- NEW: admin error/success -->
     </form>
 
     <!-- Student -->
@@ -49,6 +50,7 @@
       <input id="student_pass_login" type="password" required>
       <div class="hint">Password format: first_name + 123 (e.g. John123)</div>
       <button type="submit" id="studentLoginBtn">Login as Student</button>
+      <div id="studentMsg" class="msg"></div> <!-- NEW: student error/success -->
     </form>
 
     <button id="logoutBtn" style="display:none;margin-top:12px;background:#dc3545;">Logout</button>
@@ -58,17 +60,26 @@
   <script>
 function switchMode(m){
   document.getElementById('tabAdmin').classList.toggle('active', m==='admin');
-  document.getElementById('tabStudent').classList.toggle('active', m==='student');
+  document.getElementById('tabStudent').classList.toggle('active', m!=='admin');
   document.getElementById('adminForm').classList.toggle('hidden', m!=='admin');
   document.getElementById('studentForm').classList.toggle('hidden', m!=='student');
-  document.getElementById('msg').style.display='none';
+  document.getElementById('adminMsg').style.display='none';
+  document.getElementById('studentMsg').style.display='none';
 }
-function showMsg(t, ok=false){
-  const m=document.getElementById('msg');
+
+function showAdminMsg(t, ok=false){
+  const m=document.getElementById('adminMsg');
   m.textContent=t;
   m.className='msg '+(ok?'success':'error');
   m.style.display='block';
 }
+function showStudentMsg(t, ok=false){
+  const m=document.getElementById('studentMsg');
+  m.textContent=t;
+  m.className='msg '+(ok?'success':'error');
+  m.style.display='block';
+}
+
 function storeSession(token, role, sid){
   localStorage.setItem('jwt_token', token);
   localStorage.setItem('user_role', role);
@@ -85,7 +96,7 @@ const LOGIN_MAX_ATTEMPTS = 3;
 const ADMIN_LOCK_KEY = 'admin_login_lock';
 const STUD_LOCK_KEY  = 'student_tab_login_lock';
 
-function startLockCountdown(lockKey, seconds, btn, msgEl){
+function startLockCountdown(lockKey, seconds, btn, msgEl, isAdmin){
   const until = Date.now() + seconds*1000;
   localStorage.setItem(lockKey, until);
   if (btn) btn.disabled = true;
@@ -95,19 +106,21 @@ function startLockCountdown(lockKey, seconds, btn, msgEl){
       localStorage.removeItem(lockKey);
       if (btn) btn.disabled = false;
       if (msgEl){
-        showMsg('You can try again now.', true);
+        if(isAdmin) showAdminMsg('You can try again now.', true);
+        else showStudentMsg('You can try again now.', true);
       }
       return;
     }
     const s = Math.ceil(remain/1000);
     if (msgEl){
-      showMsg(`Too many failed attempts. Wait ${s}s`, false);
+      if(isAdmin) showAdminMsg(`Too many failed attempts. Wait ${s}s`, false);
+      else showStudentMsg(`Too many failed attempts. Wait ${s}s`, false);
     }
     setTimeout(tick, 1000);
   }
   tick();
 }
-function restoreLock(lockKey, btn, msgEl){
+function restoreLock(lockKey, btn, msgEl, isAdmin){
   const untilStr = localStorage.getItem(lockKey);
   if(!untilStr) return;
   const until = parseInt(untilStr,10);
@@ -116,7 +129,7 @@ function restoreLock(lockKey, btn, msgEl){
     return;
   }
   const remain = Math.ceil((until - Date.now())/1000);
-  startLockCountdown(lockKey, remain, btn, msgEl);
+  startLockCountdown(lockKey, remain, btn, msgEl, isAdmin);
 }
 
 async function doStudentLogin(student_id, password){
@@ -130,11 +143,13 @@ async function doStudentLogin(student_id, password){
     if (data.locked){
       startLockCountdown(STUD_LOCK_KEY, data.retry_after_seconds || 60,
         document.getElementById('studentLoginBtn'),
-        document.getElementById('msg'));
+        document.getElementById('studentMsg'),
+        false
+      );
     } else {
       const used = data.attempts_used ?? 0;
       const left = data.attempts_remaining ?? (LOGIN_MAX_ATTEMPTS - used);
-      showMsg((data.detail || 'Login failed')+` (${used}/${LOGIN_MAX_ATTEMPTS} used, ${left} left)`);
+      showStudentMsg((data.detail || 'Login failed')+` (${used}/${LOGIN_MAX_ATTEMPTS} used, ${left} left)`);
     }
     throw new Error(data.detail || 'Login failed');
   }
@@ -151,19 +166,21 @@ async function doAdminLogin(username, password){
     if (data.locked){
       startLockCountdown(ADMIN_LOCK_KEY, data.retry_after_seconds || 60,
         document.getElementById('adminLoginBtn'),
-        document.getElementById('msg'));
+        document.getElementById('adminMsg'),
+        true
+      );
     } else {
       const used = data.attempts_used ?? 0;
       const left = data.attempts_remaining ?? (LOGIN_MAX_ATTEMPTS - used);
-      showMsg((data.detail || 'Login failed')+` (${used}/${LOGIN_MAX_ATTEMPTS} used, ${left} left)`);
+      showAdminMsg((data.detail || 'Login failed')+` (${used}/${LOGIN_MAX_ATTEMPTS} used, ${left} left)`);
     }
     throw new Error(data.detail || 'Login failed');
   }
   return data;
 }
 
-restoreLock(ADMIN_LOCK_KEY, document.getElementById('adminLoginBtn'), document.getElementById('msg'));
-restoreLock(STUD_LOCK_KEY, document.getElementById('studentLoginBtn'), document.getElementById('msg'));
+restoreLock(ADMIN_LOCK_KEY, document.getElementById('adminLoginBtn'), document.getElementById('adminMsg'), true);
+restoreLock(STUD_LOCK_KEY, document.getElementById('studentLoginBtn'), document.getElementById('studentMsg'), false);
 
 document.getElementById('adminForm').addEventListener('submit', async e=>{
   e.preventDefault();
@@ -174,7 +191,7 @@ document.getElementById('adminForm').addEventListener('submit', async e=>{
       document.getElementById('admin_pass').value
     );
     storeSession(d.access_token, d.role, d.student_id);
-    showMsg('Admin login success. Redirecting...', true);
+    showAdminMsg('Admin login success. Redirecting...', true);
     setTimeout(()=>afterLogin(d.role, d.student_id), 500);
   }catch(_){}
 });
@@ -187,7 +204,7 @@ document.getElementById('studentForm').addEventListener('submit', async e=>{
       document.getElementById('student_pass_login').value
     );
     storeSession(d.access_token, d.role, d.student_id);
-    showMsg('Student login success. Redirecting...', true);
+    showStudentMsg('Student login success. Redirecting...', true);
     setTimeout(()=>afterLogin(d.role, d.student_id), 500);
   }catch(_){}
 });
